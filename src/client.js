@@ -5,7 +5,7 @@ window.__ModuleLoader__.load({
     const { createElement: h, useEffect, useRef } = React
     const PROVIDER = 'openai-codex'
     const BRAND = '『羊先生』Codex'
-    const MANAGE = '管理 ChatGPT 登录'
+    const LOGIN = '登录 OpenAI'
     const AUTH_KEY = 'llm-pi-ai/openai-codex'
     const PATH = '/api/dsh-codex-connect'
     const PINNED = '__dsh_codex_connect__'
@@ -155,7 +155,7 @@ window.__ModuleLoader__.load({
           replacement.type = 'button'
           replacement.title = '登录'
           replacement.textContent = '登录'
-          replacement.setAttribute('aria-label', MANAGE)
+          replacement.setAttribute('aria-label', LOGIN)
           const open = () => onOpen(replacement, true)
           replacement.addEventListener('click', open)
           edit.hidden = true
@@ -248,7 +248,7 @@ window.__ModuleLoader__.load({
         element.style.cssText = 'box-sizing:border-box;width:min(460px,calc(100vw - 32px));padding:20px;border:1px solid var(--dsw-alias-border-l2,#787878);border-radius:12px;background:var(--dsw-alias-bg-layer-2,Canvas);color:var(--dsw-alias-label-primary,CanvasText);font:inherit;box-shadow:0 12px 48px #0006;'
         const title = document.createElement('h2')
         title.id = 'dsh-codex-connect-dialog-title'
-        title.textContent = manage ? MANAGE : BRAND
+        title.textContent = manage ? LOGIN : BRAND
         title.style.cssText = 'font-size:18px;font-weight:650;margin:0 0 12px;'
         const status = document.createElement('p')
         status.setAttribute('role', 'status')
@@ -266,6 +266,7 @@ window.__ModuleLoader__.load({
         let attemptId
         let timeoutId
         let signature
+        let autoOpen = false
         let closed = false
 
         function clearActions() {
@@ -304,21 +305,21 @@ window.__ModuleLoader__.load({
           switch (result.state) {
             case 'idle':
               if (result.ready) {
-                status.textContent = '已连接 ChatGPT。'
+                status.textContent = '已登录 OpenAI'
                 if (result.writable) action('重新登录', () => { void start(true) })
               } else if (result.authorized) {
-                status.textContent = '已登录 ChatGPT。'
+                status.textContent = '已登录 OpenAI'
                 if (result.writable) action('使用已有授权', () => { void enable() })
               } else {
-                status.textContent = result.writable ? '尚未登录 ChatGPT。' : labels.READ_ONLY
-                if (result.writable) action('使用 ChatGPT 登录', () => { void start(false) })
+                status.textContent = result.writable ? '尚未登录 OpenAI。' : labels.READ_ONLY
+                if (result.writable) action(LOGIN, () => { void start(false) })
               }
               break
             case 'starting':
               status.textContent = '正在准备登录…'
               break
             case 'browser': {
-              status.textContent = '请在浏览器登录并授权，完成后会自动添加。'
+              status.textContent = '请在浏览器登录并授权'
               const url = officialUrl(result.url)
               if (!url) break
               const openLink = document.createElement('a')
@@ -326,15 +327,21 @@ window.__ModuleLoader__.load({
               openLink.target = '_blank'
               openLink.rel = 'noopener noreferrer'
               openLink.style.cssText = launchStyle
-              openLink.textContent = '打开 OpenAI 授权页'
+              openLink.textContent = LOGIN
               actions.append(openLink)
+              if (autoOpen) {
+                autoOpen = false
+                // Harness forwards external window opens to the system browser.
+                // Keep the link visible in case the browser did not open.
+                try { window.open(url, '_blank', 'noopener,noreferrer') } catch {}
+              }
               break
             }
             case 'saving':
               status.textContent = '正在保存模型提供商…'
               break
             case 'connected':
-              status.textContent = '已连接。可在聊天框的模型菜单中选择 Codex。'
+              status.textContent = '登录成功'
               closeButton.textContent = '完成'
               break
             default:
@@ -377,6 +384,7 @@ window.__ModuleLoader__.load({
         }
 
         async function start(renew) {
+          autoOpen = renew
           render({ state: 'starting' })
           const bytes = crypto.getRandomValues(new Uint8Array(16))
           attemptId = Array.from(bytes, value => value.toString(16).padStart(2, '0')).join('')
@@ -433,6 +441,6 @@ window.__ModuleLoader__.load({
       ctx.effect(() => launcher.close)
     }
 
-    return { apply, inject: ['slots', 'remote'], attachPicker, bindLoginButton, mountLoginBadge, followLogin }
+    return { apply, inject: ['slots', 'remote'], attachPicker, bindLoginButton, mountLoginBadge, followLogin, makeLauncher }
   },
 })

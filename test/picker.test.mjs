@@ -109,7 +109,7 @@ test('only Codex Edit is replaced by Login; original Delete and cleanup are unto
   const login=group.children[0]
   assert.equal(login.textContent,'登录')
   assert.equal(login.title,'登录')
-  assert.equal(login.getAttribute('aria-label'),'管理 ChatGPT 登录')
+  assert.equal(login.getAttribute('aria-label'),'登录 OpenAI')
   assert.equal(login.className,edit.className)
   assert.equal(edit.hidden,true)
   assert.equal(del.hidden,false)
@@ -192,4 +192,104 @@ test('credential refresh hides cleared state and ignores an older result',async(
   assert.deepEqual(states,[true,false])
   off()
   assert.equal(callbacks.size,0)
+})
+
+const authorize = 'https://auth.openai.com/oauth/authorize?redirect_uri=http%3A%2F%2Flocalhost%3A1455%2Fauth%2Fcallback&response_type=code&code_challenge_method=S256&client_id=test&state=test&code_challenge=test'
+
+function loginDialog(replies, openThrows = false) {
+  let exported
+  const launched = [], requests = [], timers = new Map()
+  class Element {
+    constructor() { this.children = []; this.style = {}; this.listeners = {} }
+    setAttribute() {}
+    append(...items) { for (const item of items) { item.parent = this; this.children.push(item) } }
+    appendChild(item) { this.append(item) }
+    remove() { this.parent.children = this.parent.children.filter(item => item !== this) }
+    addEventListener(type, fn) { this.listeners[type] = fn }
+    showModal() {}
+    click() { this.listeners.click() }
+  }
+  const window = {
+    __ModuleLoader__: {load: reg => { exported = reg.factory(() => ({})) }},
+    open(...args) {
+      launched.push(args)
+      if (openThrows) throw new Error('browser unavailable')
+    },
+  }
+  const body = new Element()
+  runInNewContext(source, {
+    window, document: {body, createElement: () => new Element()},
+    AbortController, URL, crypto: {getRandomValues: bytes => bytes},
+    setTimeout: fn => { const token = Symbol(); timers.set(token, fn); return token },
+    clearTimeout: token => timers.delete(token),
+    fetch: async (_, request) => {
+      requests.push(JSON.parse(request.body))
+      const result = replies.shift()
+      return {json: async () => result}
+    },
+  })
+  const launcher = exported.makeLauncher()
+  launcher.open(null, true)
+  const [title, status, actions] = body.children[0].children
+  return {
+    title, status, actions, launched, requests,
+    action: label => actions.children.find(node => node.textContent === label),
+    settle: () => new Promise(resolve => setImmediate(resolve)),
+    tick() { const [token, fn] = timers.entries().next().value; timers.delete(token); fn() },
+  }
+}
+
+test('relogin launches the official browser once and reports success after authorization', async () => {
+  const dialog = loginDialog([
+    {state: 'idle', ready: true, writable: true},
+    {state: 'starting'},
+    {state: 'browser', url: authorize},
+    {state: 'browser', url: authorize},
+    {state: 'connected'},
+  ])
+  await dialog.settle()
+  assert.equal(dialog.title.textContent, '登录 OpenAI')
+  assert.equal(dialog.status.textContent, '已登录 OpenAI')
+  dialog.action('重新登录').click()
+  await dialog.settle()
+  assert.equal(dialog.requests[1].renew, true)
+  assert.deepEqual(dialog.launched, [])
+  dialog.tick()
+  await dialog.settle()
+  assert.equal(dialog.status.textContent, '请在浏览器登录并授权')
+  assert.equal(dialog.action('登录 OpenAI').href, authorize)
+  assert.deepEqual(dialog.launched, [[authorize, '_blank', 'noopener,noreferrer']])
+  dialog.tick()
+  await dialog.settle()
+  assert.equal(dialog.launched.length, 1)
+  dialog.tick()
+  await dialog.settle()
+  assert.equal(dialog.status.textContent, '登录成功')
+})
+
+test('automatic relogin keeps the fallback link and rejects non-OpenAI destinations', async () => {
+  for (const url of [authorize, authorize.replace('auth.openai.com', 'untrusted.invalid')]) {
+    const dialog = loginDialog([
+      {state: 'idle', ready: true, writable: true},
+      {state: 'browser', url},
+    ], true)
+    await dialog.settle()
+    dialog.action('重新登录').click()
+    await dialog.settle()
+    assert.equal(dialog.launched.length, url === authorize ? 1 : 0)
+    assert.equal(dialog.action('登录 OpenAI')?.href, url === authorize ? authorize : undefined)
+  }
+})
+
+test('first login keeps the explicit browser link', async () => {
+  const dialog = loginDialog([
+    {state: 'idle', writable: true},
+    {state: 'browser', url: authorize},
+  ])
+  await dialog.settle()
+  dialog.action('登录 OpenAI').click()
+  await dialog.settle()
+  assert.equal(dialog.requests[1].renew, false)
+  assert.equal(dialog.action('登录 OpenAI').href, authorize)
+  assert.equal(dialog.launched.length, 0)
 })

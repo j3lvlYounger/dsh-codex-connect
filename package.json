@@ -1,0 +1,35 @@
+{
+  "name": "dsh-codex-connect",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "dsh": "0.2.2-rc.5",
+    "node": ">=20"
+  },
+  "exports": {
+    ".": "./src/index.js",
+    "./client": "./src/client.js",
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json"
+  },
+  "files": [
+    "src",
+    "locale",
+    "cordis.patch.yml"
+  ],
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-settings-models"
+      ]
+    }
+  }
+}
